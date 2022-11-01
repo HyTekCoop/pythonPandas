@@ -63,10 +63,9 @@ combined = pd.concat([pd.read_excel(file)
 # combined['Дата продажи'] = pd.to_datetime(combined['Дата продажи'])  # возможно понадобиться, но не включать дата багуется и не отображается коректно в ексел
 maskDate = (combined['Дата продажи'] >= date1) & (combined['Дата продажи'] <= date2)
 combined = combined.loc[maskDate]
-# combined.to_excel('combinedDate.xlsx', index=False)
+combined.to_excel('combinedDate.xlsx', index=False)
 
-#
-#
+
 # Таблица продаж [sheet_name='продажи']
 
 # Общая таблица по кол-ву продаж и возвратов
@@ -89,6 +88,7 @@ summaryCountSaleTable = pd.Series(data={'Кол-во продаж': summarySale,
                                         'Итого': summarySaleTable}, name='Общий итог')
 countSaleTable = countSaleTable.append(summaryCountSaleTable, ignore_index=False)
 
+
 # Таблица продаж
 summarySalePrice = takeSale['Вайлдберриз реализовал Товар (Пр)'].sum()
 summarySalePriceForSeller = takeSale['К перечислению Продавцу за реализованный Товар'].sum()
@@ -98,24 +98,57 @@ saleTable = pd.DataFrame({'Кол-во продаж': [summarySale],
                           'Комиссия ВБ': [summarySalePriceForSeller - summarySalePrice]})
 
 # Таблица возвратов [sheet_name='возвраты']
-
+summaryRefundPrice = takeRefund['Вайлдберриз реализовал Товар (Пр)'].sum()
+summaryRefundPriceForSeller = takeRefund['К перечислению Продавцу за реализованный Товар'].sum()
+# countRefundTable = countSaleTable[['Артикул поставщика', 'Кол-во возвратов']]
+refundTable = pd.DataFrame({'Кол-во продаж': [sumaryRefund],
+                          'Вайлдберриз реализовал Товар (Пр)': [summaryRefundPrice],
+                          'К перечислению Продавцу за реализованный Товар': [summaryRefundPriceForSeller],
+                          'Комиссия ВБ': [summaryRefundPriceForSeller - summaryRefundPrice]})
+# takeRefundtable = takeRefund[['Вайлдберриз реализовал Товар (Пр)', 'К перечислению Продавцу за реализованный Товар']]
 
 # Таблица сторно [sheet_name='сторно']
 storno = combined['Обоснование для оплаты'] == 'Сторно продаж'
 takeStorno = combined.loc[storno]
+dataSummaryStorno = {'Кол-во': [takeStorno['Кол-во'].sum()],
+                     'Вайлдберриз реализовал Товар (Пр)': [takeStorno['Вайлдберриз реализовал Товар (Пр)'].sum()],
+                     'Цена розничная с учетом согласованной скидки': [takeStorno['Цена розничная с учетом согласованной скидки'].sum()],
+                     'К перечислению Продавцу за реализованный Товар': [takeStorno['К перечислению Продавцу за реализованный Товар'].sum()]}
+summaryTakeStorno = pd.DataFrame(dataSummaryStorno)
 
 # Таблица брака [sheet_name='оплата брака']
 defect = combined['Обоснование для оплаты'] == 'Оплата брака'
 takeDefect = combined.loc[defect]
+takeDefectTable = takeDefect[['Артикул поставщика', 'Кол-во', 'К перечислению Продавцу за реализованный Товар']]
+summaryDefectTable = pd.Series(data={'Артикул поставщика': 'Общий итог',
+                                   'Кол-во': takeDefectTable['Кол-во'].sum(),
+                                   'К перечислению Продавцу за реализованный Товар': takeDefectTable['К перечислению Продавцу за реализованный Товар'].sum()})
+takeDefectTable = takeDefectTable.append(summaryDefectTable, ignore_index=True)
+
 
 # Таблица штрафы [sheet_name='штрафы']
 fine = combined['Обоснование для оплаты'] == 'Штрафы'
 takeFine = combined.loc[fine]
+takeFineTable = takeFine[['Артикул поставщика', 'Количество возврата', 'Штрафы', 'Обоснование штрафов и доплат']]
+summaryFineTable = pd.Series(data={'Артикул поставщика': 'Общий итог',
+                                   'Количество возврата': takeFineTable['Количество возврата'].sum(),
+                                   'Штрафы': takeFineTable['Штрафы'].sum()})
+takeFineTable = takeFineTable.append(summaryFineTable, ignore_index=True)
+
 
 # Запись в файл
 with ExcelWriter('../output/combined1.xlsx', mode="a" if os.path.exists('../output/combined1.xlsx') else "w") as writer:
     countSaleTable.to_excel(writer, sheet_name='продажи', index=True)
     saleTable.to_excel(writer, sheet_name='продажи', index=False, startrow=len(countSaleTable.index) + 5)
+    # поменять потом на refundCount в первой строке takeRefund
+    refundCount.to_excel(writer, sheet_name='возвраты', index=True)
+    refundTable.to_excel(writer, sheet_name='возвраты', index=False, startrow=len(refundCount.index) + 5)
+
     takeStorno.to_excel(writer, sheet_name='сторно', index=False)
+    summaryTakeStorno.to_excel(writer, sheet_name='сторно', index=False, startrow=len(takeStorno.index) + 5)
+
     takeDefect.to_excel(writer, sheet_name='брак', index=False)
+    takeDefectTable.to_excel(writer, sheet_name='брак', index=False, startrow=len(takeDefect.index) + 5)
+
     takeFine.to_excel(writer, sheet_name='штрафы', index=False)
+    takeFineTable.to_excel(writer, sheet_name='штрафы', index=False, startrow=len(takeFine.index) + 5)
