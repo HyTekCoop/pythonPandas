@@ -118,8 +118,8 @@ logisticSaleForTwoMonth = logisticSale.loc[logisticSale['Дата продажи
 conditionFroTwoMonth = (logisticSaleForTwoMonth['РезультатSrid'] == True) | (logisticSaleForTwoMonth['РезультатRid'] == True)
 logisticSaleForTwoMonth = logisticSaleForTwoMonth.loc[conditionFroTwoMonth]
 
-conditionFroSaleNotFound = (newTakeSale['РезультатSrid'] == False) & (newTakeSale['РезультатRid'] == False)
-saleNotFound = newTakeSale.loc[conditionFroSaleNotFound]
+conditionForSaleNotFound = (newTakeSale['РезультатSrid'] == False) & (newTakeSale['РезультатRid'] == False)
+saleNotFound = newTakeSale.loc[conditionForSaleNotFound]
 saleNotFound = saleNotFound.groupby('Артикул поставщика').count()
 saleNotFound = saleNotFound['Кол-во']
 
