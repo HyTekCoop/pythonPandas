@@ -1,5 +1,6 @@
 # Импорт модулей
 import pandas as pd
+import numpy as np
 import os
 import glob
 import tkinter as tk
@@ -41,7 +42,7 @@ dateFrom = DateEntry(frame_add_form, width=22, foreground='black', normalforegro
 dateTo = DateEntry(frame_add_form, width=22, foreground='black', normalforeground='black',
                    selectforeground='red', background='white',
                    date_pattern='YYYY-mm-dd')
-btn_submit = ttk.Button(frame_add_form, text='Submit', command=form_submit)
+btn_submit = ttk.Button(frame_add_form, text='Рассчитать', command=form_submit)
 # Расположение элементов
 textDateFrom.grid(row=0, column=0, sticky='w', padx=25, pady=30)
 textDateTo.grid(row=0, column=1, sticky='e', padx=25, pady=30)
@@ -61,9 +62,10 @@ xl_files = glob.glob('*.xlsx')
 combined = pd.concat([pd.read_excel(file)
                       for file in xl_files], ignore_index=True)
 # combined['Дата продажи'] = pd.to_datetime(combined['Дата продажи'])  # возможно понадобиться, но не включать дата багуется и не отображается коректно в ексел
+combinedLogistic = combined
 maskDate = (combined['Дата продажи'] >= date1) & (combined['Дата продажи'] <= date2)
 combined = combined.loc[maskDate]
-combined.to_excel('combinedDate.xlsx', index=False)
+# combined.to_excel('../output/combinedDate.xlsx', index=False)
 
 
 # Таблица продаж [sheet_name='продажи']
@@ -88,7 +90,6 @@ summaryCountSaleTable = pd.Series(data={'Кол-во продаж': summarySale,
                                         'Итого': summarySaleTable}, name='Общий итог')
 countSaleTable = countSaleTable.append(summaryCountSaleTable, ignore_index=False)
 
-
 # Таблица продаж
 summarySalePrice = takeSale['Вайлдберриз реализовал Товар (Пр)'].sum()
 summarySalePriceForSeller = takeSale['К перечислению Продавцу за реализованный Товар'].sum()
@@ -97,15 +98,51 @@ saleTable = pd.DataFrame({'Кол-во продаж': [summarySale],
                           'К перечислению Продавцу за реализованный Товар': [summarySalePriceForSeller],
                           'Комиссия ВБ': [summarySalePriceForSeller - summarySalePrice]})
 
+
+# Таблица Логистика продаж [sheet_name='логистика продаж']
+conditionLogisticSale = ((combinedLogistic['Обоснование для оплаты'] == 'Логистика') | (combinedLogistic['Обоснование для оплаты'] == 'Сторно продаж')) & (combinedLogistic['Количество возврата'] == 0)
+logisticSale = combinedLogistic.loc[conditionLogisticSale]
+newTakeSale = combined.loc[sale]
+
+newTakeSale['Srid'] = newTakeSale['Srid'].fillna(0)
+logisticSale['РезультатSrid'] = logisticSale['Srid'].isin(newTakeSale['Srid'])
+logisticSale['РезультатRid'] = logisticSale['Rid'].isin(newTakeSale['Rid'])
+newTakeSale['РезультатSrid'] = newTakeSale['Srid'].isin(logisticSale['Srid'])
+newTakeSale['РезультатRid'] = newTakeSale['Rid'].isin(logisticSale['Rid'])
+
+logisticSaleForMonth = logisticSale.loc[logisticSale['Дата продажи'] >= date1]
+conditionFroMonth = (logisticSaleForMonth['РезультатSrid'] == True) | (logisticSaleForMonth['РезультатRid'] == True)
+logisticSaleForMonth = logisticSaleForMonth.loc[conditionFroMonth]
+
+logisticSaleForTwoMonth = logisticSale.loc[logisticSale['Дата продажи'] < date1]
+conditionFroTwoMonth = (logisticSaleForTwoMonth['РезультатSrid'] == True) | (logisticSaleForTwoMonth['РезультатRid'] == True)
+logisticSaleForTwoMonth = logisticSaleForTwoMonth.loc[conditionFroTwoMonth]
+
+conditionFroSaleNotFound = (newTakeSale['РезультатSrid'] == False) & (newTakeSale['РезультатRid'] == False)
+saleNotFound = newTakeSale.loc[conditionFroSaleNotFound]
+saleNotFound = saleNotFound.groupby('Артикул поставщика').count()
+saleNotFound = saleNotFound['Кол-во']
+
+logisticSaleTable = pd.DataFrame({'Логистика за месяц': [logisticSaleForMonth['Услуги по доставке товара покупателю'].sum()],
+                                  'Логистика за 2 прошлых месяца': [logisticSaleForTwoMonth['Услуги по доставке товара покупателю'].sum()]})
+
+
+
 # Таблица возвратов [sheet_name='возвраты']
 summaryRefundPrice = takeRefund['Вайлдберриз реализовал Товар (Пр)'].sum()
 summaryRefundPriceForSeller = takeRefund['К перечислению Продавцу за реализованный Товар'].sum()
-# countRefundTable = countSaleTable[['Артикул поставщика', 'Кол-во возвратов']]
 refundTable = pd.DataFrame({'Кол-во продаж': [sumaryRefund],
                           'Вайлдберриз реализовал Товар (Пр)': [summaryRefundPrice],
                           'К перечислению Продавцу за реализованный Товар': [summaryRefundPriceForSeller],
                           'Комиссия ВБ': [summaryRefundPriceForSeller - summaryRefundPrice]})
-# takeRefundtable = takeRefund[['Вайлдберриз реализовал Товар (Пр)', 'К перечислению Продавцу за реализованный Товар']]
+
+
+# Таблица Логистика возвратов [sheet_name='логистика возвратов']
+logisticRefund = (combined['Обоснование для оплаты'] == 'Логистика') & (combined['Количество возврата'] > 0)
+takeLogisticRefund = combined.loc[logisticRefund]
+logisticRefundTable = pd.DataFrame({'Количество возврата': [takeLogisticRefund['Количество возврата'].sum()],
+                                    'Услуги по доставке товара покупателю': [takeLogisticRefund['Услуги по доставке товара покупателю'].sum()]})
+
 
 # Таблица сторно [sheet_name='сторно']
 storno = combined['Обоснование для оплаты'] == 'Сторно продаж'
@@ -115,6 +152,7 @@ dataSummaryStorno = {'Кол-во': [takeStorno['Кол-во'].sum()],
                      'Цена розничная с учетом согласованной скидки': [takeStorno['Цена розничная с учетом согласованной скидки'].sum()],
                      'К перечислению Продавцу за реализованный Товар': [takeStorno['К перечислению Продавцу за реализованный Товар'].sum()]}
 summaryTakeStorno = pd.DataFrame(dataSummaryStorno)
+
 
 # Таблица брака [sheet_name='оплата брака']
 defect = combined['Обоснование для оплаты'] == 'Оплата брака'
@@ -137,18 +175,25 @@ takeFineTable = takeFineTable.append(summaryFineTable, ignore_index=True)
 
 
 # Запись в файл
-with ExcelWriter('../output/combined1.xlsx', mode="a" if os.path.exists('../output/combined1.xlsx') else "w") as writer:
+# Если включить закомментированные строки будут записываться еще и данные по которым сделан рассчет
+with ExcelWriter('../output/Отчет.xlsx', mode="a" if os.path.exists('../output/Отчет.xlsx') else "w") as writer:
     countSaleTable.to_excel(writer, sheet_name='продажи', index=True)
     saleTable.to_excel(writer, sheet_name='продажи', index=False, startrow=len(countSaleTable.index) + 5)
+
+    saleNotFound.to_excel(writer, sheet_name='логистика продаж', index=True)
+    logisticSaleTable.to_excel(writer, sheet_name='логистика продаж', index=False, startrow=len(saleNotFound.index) + 5)
+
     # поменять потом на refundCount в первой строке takeRefund
     refundCount.to_excel(writer, sheet_name='возвраты', index=True)
     refundTable.to_excel(writer, sheet_name='возвраты', index=False, startrow=len(refundCount.index) + 5)
 
-    takeStorno.to_excel(writer, sheet_name='сторно', index=False)
-    summaryTakeStorno.to_excel(writer, sheet_name='сторно', index=False, startrow=len(takeStorno.index) + 5)
+    logisticRefundTable.to_excel(writer, sheet_name='логистика возвратов', index=False)
 
-    takeDefect.to_excel(writer, sheet_name='брак', index=False)
-    takeDefectTable.to_excel(writer, sheet_name='брак', index=False, startrow=len(takeDefect.index) + 5)
+    summaryTakeStorno.to_excel(writer, sheet_name='сторно', index=False)
+    # takeStorno.to_excel(writer, sheet_name='сторно', index=False, startrow=len(takeStorno.index) + 5)
 
-    takeFine.to_excel(writer, sheet_name='штрафы', index=False)
-    takeFineTable.to_excel(writer, sheet_name='штрафы', index=False, startrow=len(takeFine.index) + 5)
+    takeDefectTable.to_excel(writer, sheet_name='брак', index=False)
+    # takeDefect.to_excel(writer, sheet_name='брак', index=False, startrow=len(takeDefect.index) + 5)
+
+    takeFineTable.to_excel(writer, sheet_name='штрафы', index=False)
+    # takeFine.to_excel(writer, sheet_name='штрафы', index=False, startrow=len(takeFine.index) + 5)
