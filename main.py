@@ -140,17 +140,20 @@ refundTable = pd.DataFrame({'Кол-во продаж': [sumaryRefund],
 # Таблица Логистика возвратов [sheet_name='логистика возвратов']
 logisticRefund = (combined['Обоснование для оплаты'] == 'Логистика') & (combined['Количество возврата'] > 0)
 takeLogisticRefund = combined.loc[logisticRefund]
-logisticRefundTable = pd.DataFrame({'Количество возврата': [takeLogisticRefund['Количество возврата'].sum()],
-                                    'Услуги по доставке товара покупателю': [takeLogisticRefund['Услуги по доставке товара покупателю'].sum()]})
+summaryLogisticRefund = takeLogisticRefund['Количество возврата'].sum()
+summaryLogisticRefundForSeller = takeLogisticRefund['Услуги по доставке товара покупателю'].sum()
+logisticRefundTable = pd.DataFrame({'Количество возврата': [summaryLogisticRefund],
+                                    'Услуги по доставке товара покупателю': [summaryLogisticRefundForSeller]})
 
 
 # Таблица сторно [sheet_name='сторно']
 storno = combined['Обоснование для оплаты'] == 'Сторно продаж'
 takeStorno = combined.loc[storno]
+stornoPriceForSeller = takeStorno['К перечислению Продавцу за реализованный Товар'].sum()
 dataSummaryStorno = {'Кол-во': [takeStorno['Кол-во'].sum()],
                      'Вайлдберриз реализовал Товар (Пр)': [takeStorno['Вайлдберриз реализовал Товар (Пр)'].sum()],
                      'Цена розничная с учетом согласованной скидки': [takeStorno['Цена розничная с учетом согласованной скидки'].sum()],
-                     'К перечислению Продавцу за реализованный Товар': [takeStorno['К перечислению Продавцу за реализованный Товар'].sum()]}
+                     'К перечислению Продавцу за реализованный Товар': [stornoPriceForSeller]}
 summaryTakeStorno = pd.DataFrame(dataSummaryStorno)
 
 
@@ -168,10 +171,29 @@ takeDefectTable = takeDefectTable.append(summaryDefectTable, ignore_index=True)
 fine = combined['Обоснование для оплаты'] == 'Штрафы'
 takeFine = combined.loc[fine]
 takeFineTable = takeFine[['Артикул поставщика', 'Количество возврата', 'Штрафы', 'Обоснование штрафов и доплат']]
+summaryFineRuturnTable = takeFineTable['Количество возврата'].sum()
+summaryFinePrice = takeFineTable['Штрафы'].sum()
 summaryFineTable = pd.Series(data={'Артикул поставщика': 'Общий итог',
-                                   'Количество возврата': takeFineTable['Количество возврата'].sum(),
-                                   'Штрафы': takeFineTable['Штрафы'].sum()})
+                                   'Количество возврата': summaryFineRuturnTable,
+                                   'Штрафы': summaryFinePrice})
 takeFineTable = takeFineTable.append(summaryFineTable, ignore_index=True)
+
+
+# Таблица Итоговая [sheet_name='ОПУ']
+opy = pd.DataFrame({'Наименование строки ОПУ': [np.nan, 'Выручка', 'Возвроты', 'Сторно', 'Итого выручка', np.nan,
+                                                'Себестоимость', 'доставка до мск', 'фулфилмент', 'логистика  ВБ',
+                                                'комиссия ВБ', 'стоимость хранения', 'стоимость платной приемки',
+                                                'логистика возвратов', 'прочие удержания', 'штрафы', 'Валовая прибыль'],
+                    'Пояснение': [np.nan, '*комиссия выделена отдельно', '*с учетом комиссии вб',
+                                  '*с учетом комиссии вб', np.nan, np.nan, np.nan, '*берем из файла себестоимость', '*берем из файла себестоимость',
+                                  np.nan, '*выделение комиссии по продажам', '*возможно взять только понедельно',
+                                  '*возможно взять только понедельно', np.nan, '*возможно взять только понедельно', np.nan, np.nan],
+                    'Кол-во': [np.nan, summarySale, sumaryRefund, np.nan, summarySale - sumaryRefund, np.nan,
+                               np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, summaryLogisticRefund, np.nan, summaryFineRuturnTable, np.nan],
+                    'В руб.': [np.nan, summarySalePrice, summaryRefundPriceForSeller, stornoPriceForSeller,
+                               summarySalePrice - summaryRefundPriceForSeller - stornoPriceForSeller, np.nan, np.nan,
+                               np.nan, np.nan, np.nan, summarySalePriceForSeller - summarySalePrice, np.nan, np.nan,
+                               summaryLogisticRefundForSeller, np.nan, summaryFinePrice, np.nan]})
 
 
 # Запись в файл
@@ -197,3 +219,5 @@ with ExcelWriter('../output/Отчет.xlsx', mode="a" if os.path.exists('../out
 
     takeFineTable.to_excel(writer, sheet_name='штрафы', index=False)
     # takeFine.to_excel(writer, sheet_name='штрафы', index=False, startrow=len(takeFine.index) + 5)
+
+    opy.to_excel(writer, sheet_name='ОПУ', index=False)
