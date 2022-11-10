@@ -1,10 +1,14 @@
 # Импорт модулей
+from typing import List, Optional
+
 import pandas as pd
 import numpy as np
 import os
 import glob
 import tkinter as tk
 from tkinter import ttk
+
+from pandas import DataFrame
 from tkcalendar import Calendar, DateEntry
 from pandas.io.excel import ExcelWriter
 
@@ -43,6 +47,7 @@ dateTo = DateEntry(frame_add_form, width=22, foreground='black', normalforegroun
                    selectforeground='red', background='white',
                    date_pattern='YYYY-mm-dd')
 btn_submit = ttk.Button(frame_add_form, text='Рассчитать', command=form_submit)
+
 # Расположение элементов
 textDateFrom.grid(row=0, column=0, sticky='w', padx=25, pady=30)
 textDateTo.grid(row=0, column=1, sticky='e', padx=25, pady=30)
@@ -66,7 +71,6 @@ combinedLogistic = combined
 maskDate = (combined['Дата продажи'] >= date1) & (combined['Дата продажи'] <= date2)
 combined = combined.loc[maskDate]
 # combined.to_excel('../output/combinedDate.xlsx', index=False)
-
 
 # Таблица продаж [sheet_name='продажи']
 
@@ -96,7 +100,7 @@ summarySalePriceForSeller = takeSale['К перечислению Продавц
 saleTable = pd.DataFrame({'Кол-во продаж': [summarySale],
                           'Вайлдберриз реализовал Товар (Пр)': [summarySalePrice],
                           'К перечислению Продавцу за реализованный Товар': [summarySalePriceForSeller],
-                          'Комиссия ВБ': [summarySalePriceForSeller - summarySalePrice]})
+                          'Комиссия ВБ': [summarySalePrice - summarySalePriceForSeller]})
 
 
 # Таблица Логистика продаж [sheet_name='логистика продаж']
@@ -134,7 +138,7 @@ summaryRefundPriceForSeller = takeRefund['К перечислению Прода
 refundTable = pd.DataFrame({'Кол-во продаж': [sumaryRefund],
                           'Вайлдберриз реализовал Товар (Пр)': [summaryRefundPrice],
                           'К перечислению Продавцу за реализованный Товар': [summaryRefundPriceForSeller],
-                          'Комиссия ВБ': [summaryRefundPriceForSeller - summaryRefundPrice]})
+                          'Комиссия ВБ': [summaryRefundPrice - summaryRefundPriceForSeller]})
 
 
 # Таблица Логистика возвратов [sheet_name='логистика возвратов']
@@ -157,13 +161,26 @@ dataSummaryStorno = {'Кол-во': [takeStorno['Кол-во'].sum()],
 summaryTakeStorno = pd.DataFrame(dataSummaryStorno)
 
 
-# Таблица брака [sheet_name='оплата брака']
+# Таблица поставок [sheet_name='поставки']
+suppliesTable: list[Optional[DataFrame]] = []
+suppliesUnique = takeSale['Номер поставки'].unique()
+for supplies in suppliesUnique:
+    currentSupplie = takeSale.loc[takeSale['Номер поставки'] == supplies]
+    currentSupplie = currentSupplie[['Артикул поставщика', 'Кол-во']]
+    currentSupplie = currentSupplie.groupby('Артикул поставщика').count()
+    currentSupplie.reset_index(inplace=True)
+    currentSupplie.rename(columns={'Артикул поставщика': 'Номер поставки','Кол-во': supplies}, inplace=True)
+    suppliesTable.append(pd.concat([pd.DataFrame({'Номер поставки': ['Артикул поставщика'],
+                                                  supplies: ['Кол-во']}), currentSupplie], ignore_index=False, axis=0))
+
+
+# Таблица брака [sheet_name='брака']
 defect = combined['Обоснование для оплаты'] == 'Оплата брака'
 takeDefect = combined.loc[defect]
-takeDefectTable = takeDefect[['Артикул поставщика', 'Кол-во', 'К перечислению Продавцу за реализованный Товар']]
+takeDefectTable = takeDefect[['Артикул поставщика', 'Кол-во', 'Вайлдберриз реализовал Товар (Пр)']]
 summaryDefectTable = pd.Series(data={'Артикул поставщика': 'Общий итог',
                                    'Кол-во': takeDefectTable['Кол-во'].sum(),
-                                   'К перечислению Продавцу за реализованный Товар': takeDefectTable['К перечислению Продавцу за реализованный Товар'].sum()})
+                                   'Вайлдберриз реализовал Товар (Пр)': takeDefectTable['Вайлдберриз реализовал Товар (Пр)'].sum()})
 takeDefectTable = takeDefectTable.append(summaryDefectTable, ignore_index=True)
 
 
@@ -192,12 +209,13 @@ opy = pd.DataFrame({'Наименование строки ОПУ': [np.nan, 'В
                                np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, summaryLogisticRefund, np.nan, summaryFineRuturnTable, np.nan],
                     'В руб.': [np.nan, summarySalePrice, summaryRefundPriceForSeller, stornoPriceForSeller,
                                summarySalePrice - summaryRefundPriceForSeller - stornoPriceForSeller, np.nan, np.nan,
-                               np.nan, np.nan, np.nan, summarySalePriceForSeller - summarySalePrice, np.nan, np.nan,
+                               np.nan, np.nan, np.nan, summarySalePrice - summarySalePriceForSeller, np.nan, np.nan,
                                summaryLogisticRefundForSeller, np.nan, summaryFinePrice, np.nan]})
 
 
 # Запись в файл
 # Если включить закомментированные строки будут записываться еще и данные по которым сделан рассчет
+row = 0
 with ExcelWriter('../output/Отчет.xlsx', mode="a" if os.path.exists('../output/Отчет.xlsx') else "w") as writer:
     countSaleTable.to_excel(writer, sheet_name='продажи', index=True)
     saleTable.to_excel(writer, sheet_name='продажи', index=False, startrow=len(countSaleTable.index) + 5)
@@ -214,6 +232,10 @@ with ExcelWriter('../output/Отчет.xlsx', mode="a" if os.path.exists('../out
     summaryTakeStorno.to_excel(writer, sheet_name='сторно', index=False)
     # takeStorno.to_excel(writer, sheet_name='сторно', index=False, startrow=len(takeStorno.index) + 5)
 
+    for i in range(len(suppliesTable)):
+        suppliesTable[i].to_excel(writer, sheet_name='поставки', index=False, startrow=row)
+        row = row + len(suppliesTable[i].index) + 2
+
     takeDefectTable.to_excel(writer, sheet_name='брак', index=False)
     # takeDefect.to_excel(writer, sheet_name='брак', index=False, startrow=len(takeDefect.index) + 5)
 
@@ -221,3 +243,5 @@ with ExcelWriter('../output/Отчет.xlsx', mode="a" if os.path.exists('../out
     # takeFine.to_excel(writer, sheet_name='штрафы', index=False, startrow=len(takeFine.index) + 5)
 
     opy.to_excel(writer, sheet_name='ОПУ', index=False)
+
+# $copyright Черняев Александр 11.2022
